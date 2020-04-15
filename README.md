@@ -15,9 +15,9 @@ __3. Number of Companies Worked__
 __Really would want to review the HR job odds ratio, odds of attriting is 8.55 e+6 times over the odds of staying.__
 
 __The identified factors for Monthly Income are as follows__ 
-__1. Total Working Years __
-__2. Job Role __
-__3. Job Level __ 
+__1. Total Working Years__
+__2. Job Role__
+__3. Job Level__ 
 
 __The recomended model for predicting attrition is a logsitic regression model using the following predictors__ 
     __Age + DailyRate + Department + Education +__
