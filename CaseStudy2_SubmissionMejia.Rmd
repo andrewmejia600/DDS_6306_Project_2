@@ -1,0 +1,631 @@
+---
+title: "CASE_STUDY_2"
+author: "AndrewMejia"
+date: "4/1/2020"
+output: html_document
+---
+
+__Project introduction: A data set of attrition and monthly income was provided, in order to predict attrition for a client, Frito-Lay. Another analysis was performed to identify monthly income for a set of unlabled observations.__ 
+
+__Scope of inference, as we do not know how the data was colleceted, any predictions beyond this data set are purely extrapolation.__ 
+
+__Executive Summary: The purpose of this analysis was to explore the top three factors leading to attrition as well as explore the top three factors leading to monthly income.__ 
+
+__The identified factors for Attrition are as follows__ 
+__1. Job Role__
+__2. Distance Frome Home__
+__3. Number of Companies Worked__
+
+__Really would want to review the HR job odds ratio, odds of attriting is 8.55 e+6 times over the odds of staying.__
+
+__The identified factors for Monthly Income are as follows__ 
+__1. Total Working Years __
+__2. Job Role __
+__3. Job Level __ 
+
+__The recomended model for predicting attrition is a logsitic regression model using the following predictors__ 
+    __Age + DailyRate + Department + Education +__
+    __EducationField + JobLevel + JobSatisfaction + MaritalStatus +__
+    __YearsInCurrentRole + OverTime + JobRole + JobInvolvement +__ 
+    __YearsSinceLastPromotion + EnvironmentSatisfaction + DistanceFromHome +__
+    __NumCompaniesWorked + WorkLifeBalance + PerformanceRating +__
+    __HourlyRate + TotalWorkingYears + YearsAtCompany + MonthlyIncome +__
+    __BusinessTravel + YearsWithCurrManager + RelationshipSatisfaction +__ 
+    __PercentSalaryHike + EmployeeNumber__
+    
+__The recommended model for predicting monthly income is a linear model using the following predictors__ 
+__TotalWorkingYears + JobLevel + JobRole + MonthlyRate + Gender + EmployeeNumber__
+
+__Video Link:__
+__https://youtu.be/sJqT7rTYkPg__ 
+
+__There are two prediction output files in this repo.__
+__1.Case2PredictionsMejiaAttrition.csv__
+__2.Case2PredictionsMejiaSalary.csv__
+
+
+
+#Loading the required libraries 
+
+```{r}
+
+library(ggplot2)
+library(GGally)
+library(dplyr)
+library(caret)
+library(plotly)
+library(tidyverse)
+library(class)
+library(e1071)
+library(nnet)
+library(GGally)
+library(MASS)
+library(car)
+library(knitr)
+library(pander)
+library(broom)
+library(scatterplot3d)
+library(DataCombine)
+library(corrplot)
+library(kableExtra)
+library(lubridate)
+library(stringr)
+library(sjPlot) 
+library(gmodels)
+library(inspectdf)
+library(ggmosaic)
+library(cowplot)
+library(ResourceSelection)
+
+
+case_study_2  = read.csv('/media/andrew/29426984-e707-487c-8f66-ca5e368b23d11/Documents/School/HomeWork/DS6306_DDS/MSDS_6306_Doing-Data-Science/Unit 14 and 15 Case Study 2/CaseStudy2-data.csv',header = TRUE)
+#case_study_2['Log_ML_IN'] = log(case_study_2$MonthlyIncome)
+
+case_study_salary_preds  = read.csv('/media/andrew/29426984-e707-487c-8f66-ca5e368b23d11/Documents/School/HomeWork/DS6306_DDS/MSDS_6306_Doing-Data-Science/Unit 14 and 15 Case Study 2/CaseStudy2CompSet No Salary.csv',header = TRUE)
+
+case_study_attrition_preds = read.csv('/media/andrew/29426984-e707-487c-8f66-ca5e368b23d11/Documents/School/HomeWork/DS6306_DDS/MSDS_6306_Doing-Data-Science/Unit 14 and 15 Case Study 2/CaseStudy2CompSet No Attrition.csv',header = TRUE)
+
+summary(case_study_2)
+
+# We see there is a highly Imbalanced data set 
+table(case_study_2$Attrition)
+
+na_indx = apply(case_study_2, 2, function(x) any(is.na(x) | is.infinite(x)))
+na_indx
+
+```
+
+
+```{r}
+
+
+attach(case_study_2)
+
+
+```
+__EDA__
+```{r}
+
+#EDA for attributes  leading to attritition 
+
+
+#Wanting to look at proportion tables for EDA to see largest shifts for model inclusions 
+categorical_variables = case_study_2 %>% select_if(is.factor) %>% names()
+
+
+# remove the response
+response_ind = match('Attrition', categorical_variables)
+categorical_variables = categorical_variables[-response_ind]
+
+
+# plot categorical variables
+for (i in categorical_variables) {
+
+print(i)
+  CrossTable(case_study_2[, i], case_study_2[,"Attrition"],
+             prop.r = T,
+             prop.c = F,
+             prop.t = F,
+             prop.chisq = F,
+             dnn = c(i, "Attrition"))
+
+  
+  
+  
+}
+
+```
+__We see from the below plots, these influence Monthly Income Highly__
+
+```{r}
+
+case_study_2 %>% ggplot(aes(x = TotalWorkingYears, y = MonthlyIncome,)) + geom_point() + geom_jitter()
+
+case_study_2 %>% ggplot(aes(x = JobLevel, y = MonthlyIncome,)) + geom_point() + geom_jitter()
+
+case_study_2 %>% ggplot(aes(x = JobRole, y = MonthlyIncome,)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90))
+
+
+ggpairs(case_study_2[,c(20,16,17,30)])
+
+```
+
+#Want to look at continous predictors as some levels look to be more like categorical rather than continous levels, and #still want to use as continous labels for NB and KNN classification
+
+```{r}
+all_variables = case_study_2 %>% names()
+
+
+# remove the response
+response_ind = match(c('ID','Age','Attrition','EmployeeCount','EmployeeNumber','HourlyRate','DailyRate','MonthlyIncome','MonthlyRate','Over18','PerformanceRating', 'StandardHours'), all_variables)
+
+all_pred_variables = all_variables[-response_ind]
+
+
+# plot categorical variables
+for (i in all_pred_variables) {
+
+print(i)
+  CrossTable(case_study_2[, i], case_study_2[,"Attrition"],
+             prop.r = T,
+             prop.c = F,
+             prop.t = F,
+             prop.chisq = F,
+             dnn = c(i, "Attrition"))
+  
+}
+
+
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition, YearsAtCompany), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Years At Company ") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,BusinessTravel), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("BusinessTravel") +
+   ylab("Attrition")
+
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,Education), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Education") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,JobLevel), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Job Level") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,JobSatisfaction), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Job Satisfaction") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,JobInvolvement), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Job Involvement") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,EnvironmentSatisfaction), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Environment") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,Department), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Department") +
+   ylab("Attrition")
+
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,EducationField), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Education Field") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,Gender), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Gender") +
+   ylab("Attrition")
+
+
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,MaritalStatus), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Marital Status") +
+   ylab("Attrition")
+
+```
+
+
+__We see from both the proportion tables and from the mosiac plots these factors lead to differences in attrition rates__
+__We also see these are chosen in forward selection methods for logistic regression.__ 
+```{r}
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition,DistanceFromHome), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Distiance From Home") +
+   ylab("Attrition")
+
+
+  case_study_2 %>% 
+    ggplot() +
+    geom_mosaic(aes(x = product(Attrition, JobRole), fill = Attrition)) +
+    theme(axis.text.x = element_text(angle = 90,
+                                                  hjust = 1,
+                                                  vjust = 0.5),
+                       axis.text.y = element_blank(),
+                       axis.ticks.y = element_blank()) +
+    xlab("Job Role") +
+     ylab("Attrition")
+
+
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition, OverTime), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Over Time") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition, NumCompaniesWorked), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Number of Companies") +
+   ylab("Attrition")
+
+case_study_2 %>% 
+  ggplot() +
+  geom_mosaic(aes(x = product(Attrition, WorkLifeBalance), fill = Attrition)) +
+  theme(axis.text.x = element_text(angle = 90,
+                                                hjust = 1,
+                                                vjust = 0.5),
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank()) +
+  xlab("Work Life Balance") +
+   ylab("Attrition")
+
+```
+
+__TEST/TRAIN DATA SAMPLING__
+```{r}
+
+#creating a more balanced data set by upsampling.
+
+set.seed(7474)
+case_study_2_sample = upSample(case_study_2[,-c(3)], case_study_2[,3])
+
+#Controling Sampling by modifying the p in the create partition for creating the test train splits from the downsampled data for training. 
+set.seed(7474)
+case_study2_sample_idx = createDataPartition(case_study_2_sample$Class, p=.35, list = FALSE, times = 1)
+
+case_study2_sample_train = case_study_2_sample[case_study2_sample_idx,]
+case_study2_sample_test = case_study_2_sample[-case_study2_sample_idx,]
+
+
+
+#Removing Row Number Partitions indices 
+row.names(case_study2_sample_train) = NULL
+row.names(case_study2_sample_test) = NULL 
+
+case_study2_sample_train = case_study2_sample_train[,-c(1,22)]
+case_study2_sample_test = case_study2_sample_test[,-c(1,22)]
+
+#for regression
+set.seed(7474)
+case_study2_sample_idx_r = sample(dim(case_study_2)[1], .35*dim(case_study_2)[1])
+
+
+case_study2_sample_train_r = case_study_2[case_study2_sample_idx_r,]
+case_study2_sample_test_r = case_study_2[-case_study2_sample_idx_r,]
+
+#Removing Row Number Partitions indices 
+row.names(case_study2_sample_train_r) = NULL
+row.names(case_study2_sample_test_r) = NULL 
+
+case_study2_sample_train_r = case_study2_sample_train_r[,-c(1,23)]
+case_study2_sample_test_r = case_study2_sample_test_r[,-c(1,23)]
+
+
+```
+
+__NB model__
+
+```{r}
+
+nb_model_1 = naiveBayes(case_study2_sample_train[,-c(34)], as.factor(case_study2_sample_train$Class))
+table_cm = table(predict(nb_model_1, case_study2_sample_test[,-c(34)]), as.factor(case_study2_sample_test$Class))
+CM = confusionMatrix(table_cm)
+CM
+
+
+
+```
+
+__KNN model__
+
+```{r}
+
+colnames(case_study2_sample_test %>%  select_if(is.factor))
+
+  knn_class = knn(case_study2_sample_train[,-c(2,4,7,11,15,17,21,34)],case_study2_sample_test[,-c(2,4,7,11,15,17,21,34)], case_study2_sample_train[,34], prob = TRUE, k = 2)
+  class_table = table(case_study2_sample_test[,34], knn_class)
+  confusemat = confusionMatrix(class_table)
+  confusemat
+
+
+```
+
+__We see from the above EDA, Working Years, Job Role and Job Level are all stastically significant pvalue <0.05__
+__salary linear model__ 
+```{r}
+
+# need for confidence intervals
+
+salary_model = lm(MonthlyIncome ~ TotalWorkingYears  + JobLevel + JobRole + MonthlyRate + Gender + EmployeeNumber,data = case_study2_sample_train_r)
+
+salary_model_all = lm(MonthlyIncome ~ .,data = case_study2_sample_train_r)
+
+step(salary_model,
+     scope = list(upper=salary_model_all),
+     direction="forward",
+     test="Chisq",
+     data=case_study2_sample_train_r)
+
+
+#salary_model = lm(MonthlyIncome ~ TotalWorkingYears  , data = case_study2_sample_train)
+
+summary(salary_model)
+confint(salary_model)
+vif(salary_model)
+
+
+#preditive final model 
+
+final_model = train(MonthlyIncome ~  TotalWorkingYears + JobLevel + JobRole + MonthlyRate + Gender + EmployeeNumber, method = "lm", data = case_study2_sample_train_r, trControl = trainControl(method = "LOOCV"))
+
+
+
+final_model
+
+summary(final_model)
+
+salary_pred = predict(final_model, newdata = case_study2_sample_test_r, interval = "prediction")
+
+salary_pred
+
+RSME = sqrt(mean((salary_pred-case_study2_sample_test_r$MonthlyIncome)^2))
+
+salary_pred_submit = predict(final_model, newdata = case_study_salary_preds , interval = "prediction")
+
+case_study_salary_preds["MonthlyIncome"] = salary_pred_submit
+
+
+par(mfrow=c(1,2))
+plot(salary_model$fitted.values,salary_model$residuals,ylab="Resdiduals",xlab="Fitted")
+qqnorm(salary_model$residuals)
+
+case_study_salary_preds_out = case_study_salary_preds[,c("ID", "MonthlyIncome")]
+
+head(case_study_salary_preds_out, n= 5)
+
+
+
+
+```
+#Looking at logistic regression
+
+```{r}
+#Starting with a base logistic regression model for using as a forward selection criteria later 
+
+main.logr = glm(Class ~ .,data=case_study2_sample_train ,family=binomial(link='logit'))
+
+#Looking at some highly influential factors for predicting attrition from EDA analysis above 
+
+main.logr_l_3 = glm(Class ~ Age + DailyRate + Department + Education + EducationField + JobLevel + JobSatisfaction + MaritalStatus + YearsInCurrentRole,data=case_study2_sample_train ,family=binomial(link='logit'))
+
+
+#Performing step forward selection and looking at AIC of models for best fit criteria to data 
+step(main.logr_l_3,
+     scope = list(upper=main.logr),
+     direction="forward",
+     test="Chisq",
+     data=case_study2_sample_train)
+
+#looking at model AIC 
+main.logr_l_3$aic
+
+#looking at model attributes
+summary(main.logr_l_3)
+
+#Looking at model coeffiecients 
+coefficients(main.logr_l_3)
+
+#looking at model fit for data 
+hoslem.test(main.logr_l_3$y, fitted(main.logr_l_3), g=10)
+
+#looking at outliers 
+plot(main.logr_l_3)
+
+#making confusion matrix for how well model did in training 
+pred = main.logr_l_3$fitted.values
+
+case_study2_sample_train['Pred_Out'] = as.factor(ifelse(pred>.50, "Yes", "No"))
+
+Truth = case_study2_sample_train$Class
+Predt = case_study2_sample_train$Pred_Out
+
+confusionMatrix(table(Predt, Truth))
+
+
+#testing model on independent test split 
+pred = predict(main.logr_l_3, newdata = case_study2_sample_test, type="response")
+
+case_study2_sample_test['Pred_Out'] = as.factor(ifelse(pred>.50, "Yes", "No"))
+
+Truth = case_study2_sample_test$Class
+Predt = case_study2_sample_test$Pred_Out
+
+confusionMatrix(table(Predt, Truth))
+
+```
+
+__Recommended Logistic Regression Model__
+__As confirmed by the EDA, we see Job Role, Job Level and Distance from Home are statistically significant in predicting attrition pvalue < 0.05__
+```{r}
+#Repeating same steps as from above with more predictors and complexity
+
+
+main.logr_l_4 = glm(Class ~ Age + DailyRate + Department + Education + 
+    EducationField + JobLevel + JobSatisfaction + MaritalStatus + 
+    YearsInCurrentRole + OverTime + JobRole + JobInvolvement + 
+    YearsSinceLastPromotion + EnvironmentSatisfaction + DistanceFromHome + 
+    NumCompaniesWorked + WorkLifeBalance + PerformanceRating + 
+    HourlyRate + TotalWorkingYears + YearsAtCompany + MonthlyIncome + 
+    BusinessTravel + YearsWithCurrManager + RelationshipSatisfaction + 
+    PercentSalaryHike + EmployeeNumber, data=case_study2_sample_train ,family=binomial(link='logit') )
+
+step(main.logr_l_4,
+     scope = list(upper=main.logr),
+     direction="forward",
+     test="Chisq",
+     data=case_study2_sample_train)
+
+main.logr_l_4$aic
+
+summary(main.logr_l_4)
+
+exp(cbind("Odds ratio" = coef(main.logr_l_4), confint.default(main.logr_l_4, level = 0.95)))
+
+coefficients(main.logr_l_4)
+
+#based on the goodness of fit test, we see this model is a good fit for the data 
+hoslem.test(main.logr_l_4$y, fitted(main.logr_l_4), g=10)
+plot(main.logr_l_4)
+
+
+pred = main.logr_l_4$fitted.values
+
+case_study2_sample_train['Pred_Out'] = as.factor(ifelse(pred>.50, "Yes", "No"))
+
+Truth = case_study2_sample_train$Class
+Predt = case_study2_sample_train$Pred_Out
+
+confusionMatrix(table(Predt, Truth))
+
+
+
+
+pred = predict(main.logr_l_4, newdata = case_study2_sample_test, type="response")
+
+case_study2_sample_test['Pred_Out'] = as.factor(ifelse(pred>.50, "Yes", "No"))
+
+Truth = case_study2_sample_test$Class
+Predt = case_study2_sample_test$Pred_Out
+
+confusionMatrix(table(Predt, Truth))
+
+case_study_att_pred = predict(main.logr_l_4, newdata = case_study_attrition_preds, type="response")
+
+case_study_attrition_preds['Attrition'] = as.factor(ifelse(case_study_att_pred>.50, "Yes", "No"))
+
+case_study_attrition_preds_out = case_study_attrition_preds[,c('ID','Attrition')]
+
+head(case_study_attrition_preds_out)
+
+
+```
+
+__We see from the mcnemar test pvalue = 0.003 < .05 the Logistic Regression is significantly different from the NB model, outperforming the NB model__
+```{r}
+#Constructing a performance metric comparison matrix for mcnemar testing to see if NB is different from the performance of the logistic regression model 
+
+performance_comp_mat = matrix(c(384,564, 469, 479), nrow = 2, dimnames = list("NB" = c("No", "Yes"), "LogR"= c("No", "Yes")))
+
+mcnemar.test(performance_comp_mat)
+
+
+
+```
